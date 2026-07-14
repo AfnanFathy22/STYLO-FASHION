@@ -2,12 +2,12 @@ venv/
 outputs/
 __pycache__/
 
+*.mp4
+*.zip
+*.log
+
 *.pt
 *.pth
 *.ckpt
 *.bin
 *.safetensors
-
-*.mp4
-*.zip
-*.log
