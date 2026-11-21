@@ -1,13 +1,5 @@
-venv/
-outputs/
+﻿venv/
 __pycache__/
-
-*.mp4
-*.zip
-*.log
-
-*.pt
-*.pth
-*.ckpt
-*.bin
-*.safetensors
+*.pyc
+.env
+data/qdrant_storage/
