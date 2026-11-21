@@ -1,0 +1,9 @@
+# Stage 1: Body Understanding - pinned, tested dependency versions.
+#
+# IMPORTANT: mediapipe>=0.10.15 removed the legacy `mp.solutions` Python API
+# that this project uses (mp.solutions.pose, mp.solutions.selfie_segmentation).
+# 0.10.14 is the newest version that still ships it, so it is pinned exactly.
+mediapipe==0.10.14
+opencv-contrib-python==4.10.0.84
+numpy==1.26.4
+scipy==1.13.1
