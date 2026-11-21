@@ -1,232 +1,233 @@
-# Stage 1 — Body Understanding
-### AI Virtual Try-On Pipeline (Production-Track Prototype)
 
-This is Stage 1 of a multi-stage virtual try-on system. It runs live on a
-webcam feed and produces, per frame:
+<div align="center">
+<h1>IDM-VTON: Improving Diffusion Models for Authentic Virtual Try-on in the Wild</h1>
 
-1. **Pose estimation** — 33 body landmarks, each with `x`, `y`, `z` and a
-   `visibility` confidence score (MediaPipe Pose).
-2. **Person segmentation** — a soft alpha mask, a binary mask, and a
-   background-removed composite (MediaPipe Selfie Segmentation).
-3. **Body mesh estimation** — a triangulated 2.5D mesh anchored to the pose
-   landmarks and constrained to the segmentation silhouette (including
-   concavities like the space between the arms and torso), which is the
-   right *shape* of data structure a future garment-warping stage needs.
+<a href='https://idm-vton.github.io'><img src='https://img.shields.io/badge/Project-Page-green'></a>
+<a href='https://arxiv.org/abs/2403.05139'><img src='https://img.shields.io/badge/Paper-Arxiv-red'></a>
+<a href='https://huggingface.co/spaces/yisol/IDM-VTON'><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Demo-yellow'></a>
+<a href='https://huggingface.co/yisol/IDM-VTON'><img src='https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Model-blue'></a>
 
-All four views (pose, segmentation, mesh, background-removed) are shown
-together in one live window, along with an FPS counter.
 
-> **Note on the body mesh:** true production systems (Snapchat, Zeekit,
-> Vue.ai) fit a parametric 3D body model such as SMPL. Stage 1 does not do
-> that yet — SMPL fitting is a heavier, separate dependency and modeling
-> step. Instead, this stage builds a dense mesh directly from the
-> segmentation mask (which already respects body silhouette concavities)
-> and interpolates depth from the pose landmarks' z-values. The *output
-> interface* (vertices + triangle faces + named landmark anchors) is
-> designed so that swapping in an SMPL-based mesh later is a drop-in
-> replacement for `mesh/mesh_estimator.py`, without touching `main.py` or
-> any downstream stage.
+</div>
+
+This is the official implementation of the paper ["Improving Diffusion Models for Authentic Virtual Try-on in the Wild"](https://arxiv.org/abs/2403.05139).
+
+Star ⭐ us if you like it!
 
 ---
 
-## 1. Project structure
+
+![teaser2](assets/teaser2.png)&nbsp;
+![teaser](assets/teaser.png)&nbsp;
+
+
+
+## Requirements
 
 ```
-Stage1/
-│── main.py                 # Entry point: live webcam loop, key handling, display
-│── config.py                # All tunable parameters in one place
-│── requirements.txt
-│── README.md
-│
-├── pose/
-│   ├── __init__.py
-│   └── pose_estimator.py    # MediaPipe Pose wrapper (landmarks + skeleton drawing)
-│
-├── segmentation/
-│   ├── __init__.py
-│   └── segmenter.py         # MediaPipe Selfie Segmentation wrapper (masks + BG removal)
-│
-├── mesh/
-│   ├── __init__.py
-│   └── mesh_estimator.py    # Builds the triangulated body mesh
-│
-├── utils/
-│   ├── __init__.py
-│   ├── fps_counter.py       # Rolling-window FPS counter
-│   ├── visualization.py     # Drawing / panel-grid compositing helpers
-│   └── io_utils.py          # Saves all artifacts to disk on demand
-│
-└── outputs/                  # Created automatically; capture_<timestamp>/ folders go here
+git clone https://github.com/yisol/IDM-VTON.git
+cd IDM-VTON
+
+conda env create -f environment.yaml
+conda activate idm
 ```
 
----
+## Data preparation
 
-## 2. Which IDE to use
+### VITON-HD
+You can download VITON-HD dataset from [VITON-HD](https://github.com/shadow2496/VITON-HD).
 
-**VS Code** is the better fit for this project and is what these
-instructions assume:
+After download VITON-HD dataset, move vitonhd_test_tagged.json into the test folder, and move vitonhd_train_tagged.json into the train folder.
 
-- Lightweight, fast to open a single-purpose Python project like this.
-- Excellent, mature Python + virtual environment support via the Python
-  extension (auto-detects `venv`, lets you pick the interpreter from the
-  bottom status bar).
-- Integrated terminal makes running `python main.py` and managing `pip`
-  trivial.
-- The built-in debugger handles OpenCV windows and webcam access without
-  any special configuration.
+Structure of the Dataset directory should be as follows.
 
-PyCharm (Community or Professional) works fine too and has a slightly more
-powerful debugger and refactoring tools, but it's heavier to start up and
-is more suited to larger, multi-module applications. For a project this
-size, VS Code is the recommended, faster choice. If you already live in
-PyCharm daily, there's no reason to switch — everything below applies
-identically, just create the venv and run the file inside PyCharm's own
-terminal/Run configuration instead.
-
----
-
-## 3. Create a virtual environment
-
-Open a terminal in the `Stage1/` folder.
-
-**Windows:**
-```bash
-python -m venv venv
-venv\Scripts\activate
 ```
 
-**macOS / Linux:**
-```bash
-python3 -m venv venv
-source venv/bin/activate
+train
+|-- image
+|-- image-densepose
+|-- agnostic-mask
+|-- cloth
+|-- vitonhd_train_tagged.json
+
+test
+|-- image
+|-- image-densepose
+|-- agnostic-mask
+|-- cloth
+|-- vitonhd_test_tagged.json
+
 ```
 
-You'll know it worked because your terminal prompt will now be prefixed
-with `(venv)`. Always activate this environment before installing
-packages or running `main.py`.
+### DressCode
+You can download DressCode dataset from [DressCode](https://github.com/aimagelab/dress-code).
 
----
+We provide pre-computed densepose images and captions for garments [here](https://kaistackr-my.sharepoint.com/:u:/g/personal/cpis7_kaist_ac_kr/EaIPRG-aiRRIopz9i002FOwBDa-0-BHUKVZ7Ia5yAVVG3A?e=YxkAip).
 
-## 4. Install the requirements
+We used [detectron2](https://github.com/facebookresearch/detectron2) for obtaining densepose images, refer [here](https://github.com/sangyun884/HR-VITON/issues/45) for more details.
 
-With the virtual environment activated:
+After download the DressCode dataset, place image-densepose directories and caption text files as follows.
 
-```bash
-pip install --upgrade pip
-pip install -r requirements.txt
+```
+DressCode
+|-- dresses
+    |-- images
+    |-- image-densepose
+    |-- dc_caption.txt
+    |-- ...
+|-- lower_body
+    |-- images
+    |-- image-densepose
+    |-- dc_caption.txt
+    |-- ...
+|-- upper_body
+    |-- images
+    |-- image-densepose
+    |-- dc_caption.txt
+    |-- ...
 ```
 
-This installs exactly:
-- `mediapipe==0.10.14` (pinned — see the note in `requirements.txt`: newer
-  MediaPipe versions removed the `mp.solutions` API this project depends on)
-- `opencv-contrib-python==4.10.0.84`
-- `numpy==1.26.4`
-- `scipy==1.13.1` (used for Delaunay triangulation and nearest-neighbor
-  depth interpolation in the mesh stage)
 
-Installation takes a minute or two the first time since MediaPipe ships
-its bundled ML models.
+## Training
 
----
 
-## 5. Run the project
+### Preparation
 
-From inside the `Stage1/` folder, with the virtual environment active:
+Download pre-trained ip-adapter for sdxl(IP-Adapter/sdxl_models/ip-adapter-plus_sdxl_vit-h.bin) and image encoder(IP-Adapter/models/image_encoder) [here](https://github.com/tencent-ailab/IP-Adapter).
 
-```bash
-python main.py
+```
+git clone https://huggingface.co/h94/IP-Adapter
 ```
 
-You should see:
-1. A console message confirming model initialization and camera access.
-2. A single window titled **"Stage 1 - Body Understanding (Q=quit, S=save)"**
-   split into 4 labeled panels: **Pose**, **Segmentation**, **Mesh**, and
-   **Background Removed**, with a live FPS counter in the top-left corner.
+Move ip-adapter to ckpt/ip_adapter, and image encoder to ckpt/image_encoder.
 
-**Controls:**
-- **`S`** — save every artifact from the current frame to
-  `outputs/capture_<timestamp>/`: the raw frame, each overlay image, the
-  binary and alpha masks, the background-removed composite, the raw pose
-  landmarks as CSV, and the body mesh as both `.npz` (fast to reload in
-  Python) and `.obj` (open directly in Blender or MeshLab to inspect the
-  3D mesh).
-- **`Q`** — quit the application and release the camera cleanly.
+Start training using python file with arguments,
 
-If your machine has more than one camera, change `CAMERA_INDEX` in
-`config.py` (0, 1, 2...).
+```
+accelerate launch train_xl.py \
+    --gradient_checkpointing --use_8bit_adam \
+    --output_dir=result --train_batch_size=6 \
+    --data_dir=DATA_DIR
+```
 
----
+or, you can simply run with the script file.
 
-## 6. How to test that everything is working
+```
+sh train_xl.sh
+```
 
-**A. Quick visual check**
-1. Run `python main.py` and stand in front of your webcam, a few steps
-   back so your full upper body (ideally full body) is visible.
-2. In the **Pose** panel you should see a green skeleton with red joint
-   dots tracking your movement in real time.
-3. In the **Segmentation** panel you should see a green translucent
-   overlay covering exactly your body silhouette, following you as you
-   move — check it correctly excludes the background.
-4. In the **Mesh** panel you should see an orange triangulated wireframe
-   covering your body silhouette, denser where the segmentation mask is,
-   with vertices concentrated at your joints.
-5. In the **Background Removed** panel you should see yourself composited
-   onto a solid black background.
-6. Watch the FPS counter (top-left of the Pose panel) — on a typical
-   laptop CPU this should read roughly 15-30 FPS depending on your
-   `POSE_MODEL_COMPLEXITY` setting in `config.py`.
 
-**B. Save-and-inspect check**
-1. Press **`S`** once. The console should print
-   `[SAVED] Capture written to: .../outputs/capture_<timestamp>`, and a
-   brief yellow "SAVED" banner should flash on screen.
-2. Open that folder and confirm it contains: `original.png`,
-   `pose_overlay.png`, `segmentation_overlay.png`, `mesh_overlay.png`,
-   `binary_mask.png`, `alpha_mask.png`, `background_removed.png`,
-   `pose_landmarks.csv`, `mesh.npz`, and `mesh.obj`.
-3. Open `pose_landmarks.csv` in a text editor or Excel — you should see 33
-   rows (one per MediaPipe landmark) with plausible `x`, `y`, `z` and
-   `visibility` values.
-4. (Optional, recommended) Open `mesh.obj` in a free viewer like
-   [MeshLab](https://www.meshlab.net/) or Blender to confirm it loads as a
-   proper connected 3D surface, not a scatter of disconnected points.
+## Inference
 
-**C. Failure-mode checks (confirms the error handling works)**
-1. Unplug/disable your webcam and re-run `python main.py` — you should get
-   a clear `[FATAL] Could not open camera at index 0...` message and a
-   clean exit (exit code `1`), not a crash traceback.
-2. While running, step fully out of the camera's view — the **Pose** and
-   **Mesh** panels should simply stop drawing a skeleton/mesh (no crash);
-   the **Segmentation** panel will show an empty/near-empty mask since no
-   person is present.
-3. Press **`Q`** — the console should print the shutdown messages in order
-   ("Quit key pressed...", then "All resources released. Goodbye!") and
-   the window should close immediately.
 
----
+### VITON-HD
 
-## 7. Configuration reference
+Inference using python file with arguments,
 
-All of the following live in `config.py` and can be tuned without touching
-any other file:
+```
+accelerate launch inference.py \
+    --width 768 --height 1024 --num_inference_steps 30 \
+    --output_dir "result" \
+    --unpaired \
+    --data_dir "DATA_DIR" \
+    --seed 42 \
+    --test_batch_size 2 \
+    --guidance_scale 2.0
+```
 
-| Setting | Effect |
-|---|---|
-| `CAMERA_INDEX` | Which webcam to open |
-| `FRAME_WIDTH` / `FRAME_HEIGHT` | Requested capture resolution |
-| `POSE_MODEL_COMPLEXITY` | 0 = fastest/least accurate, 2 = slowest/most accurate |
-| `SEGMENTATION_MODEL_SELECTION` | 0 = general model, 1 = landscape/full-body model |
-| `MESH_GRID_STEP` | Smaller = denser mesh, slower; larger = sparser, faster |
-| `MESH_DEPTH_SCALE` | Visual exaggeration factor for mesh depth |
-| `DISPLAY_SCALE` | Size of each of the 4 panels in the combined window |
+or, you can simply run with the script file.
 
----
+```
+sh inference.sh
+```
 
-## 8. What's next (Stage 2+)
+### DressCode
 
-This mesh and these landmarks are designed to feed directly into:
-- **Stage 2:** FashionCLIP + Qdrant garment retrieval (matching a garment
-  image to the detected body/pose).
-- **Stage 3:** Diffusion-based try-on warping (CatVTON / IDM-VTON),
-  consuming the segmentation mask and landmark anchors from this stage as
-  conditioning input.
+For DressCode dataset, put the category you want to generate images via category argument,
+```
+accelerate launch inference_dc.py \
+    --width 768 --height 1024 --num_inference_steps 30 \
+    --output_dir "result" \
+    --unpaired \
+    --data_dir "DATA_DIR" \
+    --seed 42 
+    --test_batch_size 2
+    --guidance_scale 2.0
+    --category "upper_body" 
+```
+
+or, you can simply run with the script file.
+```
+sh inference.sh
+```
+
+## Start a local gradio demo <a href='https://github.com/gradio-app/gradio'><img src='https://img.shields.io/github/stars/gradio-app/gradio'></a>
+
+Download checkpoints for human parsing [here](https://huggingface.co/spaces/yisol/IDM-VTON/tree/main/ckpt).
+
+Place the checkpoints under the ckpt folder.
+```
+ckpt
+|-- densepose
+    |-- model_final_162be9.pkl
+|-- humanparsing
+    |-- parsing_atr.onnx
+    |-- parsing_lip.onnx
+
+|-- openpose
+    |-- ckpts
+        |-- body_pose_model.pth
+    
+```
+
+
+
+
+Run the following command:
+
+```python
+python gradio_demo/app.py
+```
+
+
+
+
+
+
+## Acknowledgements
+
+
+Thanks [ZeroGPU](https://huggingface.co/zero-gpu-explorers) for providing free GPU.
+
+Thanks [IP-Adapter](https://github.com/tencent-ailab/IP-Adapter) for base codes.
+
+Thanks [OOTDiffusion](https://github.com/levihsu/OOTDiffusion) and [DCI-VTON](https://github.com/bcmi/DCI-VTON-Virtual-Try-On) for masking generation.
+
+Thanks [SCHP](https://github.com/GoGoDuck912/Self-Correction-Human-Parsing) for human segmentation.
+
+Thanks [Densepose](https://github.com/facebookresearch/DensePose) for human densepose.
+
+
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=yisol/IDM-VTON&type=Date)](https://star-history.com/#yisol/IDM-VTON&Date)
+
+
+
+## Citation
+```
+@inproceedings{choi2024improving,
+  title={Improving diffusion models for authentic virtual try-on in the wild},
+  author={Choi, Yisol and Kwak, Sangkyung and Lee, Kyungmin and Choi, Hyungwon and Shin, Jinwoo},
+  booktitle={European Conference on Computer Vision},
+  year={2024},
+}
+```
+
+
+
+## License
+The codes and checkpoints in this repository are under the [CC BY-NC-SA 4.0 license](https://creativecommons.org/licenses/by-nc-sa/4.0/legalcode).
+
+
